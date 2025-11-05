@@ -155,11 +155,11 @@ EMO_LABEL_KO = {
 
 # ===== Endings =====
 EMO_ENDINGS = {
-    "hope":     ("엔딩: 작은 빛", "작은 말 한 줄이 숲을 밝힌다."),
-    "trust":    ("엔딩: 함께 걷는 길", "의지의 발자국이 나란히 남는다."),
-    "sadness":  ("엔딩: 잔물결", "고요히 흔들리다 이내 잦아든다."),
-    "solitude": ("엔딩: 하얀 숨", "긴 밤을 지나 스스로를 안아준다."),
-    "anger":    ("엔딩: 둔중한 돌", "무거움 끝에서 멈춰 숨을 고른다."),
+    "hope":     ("엔딩: 친구", "이비는 친구들에게 걸어갔다."),
+    "trust":    ("엔딩: 의지", "이비는 이제 외롭지 않았다."),
+    "sadness":  ("엔딩: 눈물", "이비는 고개를 푹 숙였다."),
+    "solitude": ("엔딩: 고독", "이비는 쓸쓸함에 파묻혔다."),
+    "anger":    ("엔딩: 발톱", "이비는 발톱을 드러냈다."),
 }
 
 # ===== Policy / Text utils =====
@@ -318,11 +318,115 @@ div.stButton > button{ font-size: 30px; font-weight: 700; border: 3px solid #DAD
 .prologue-wrap{ margin-top: 48px; margin-bottom: 24px; }
 .prologue-cta { opacity: 0; animation: fadeUp .8s ease forwards; }
 .scene-wrap { display:flex; flex-direction:column; align-items:center; gap:18px; }
-.bubble { width: min(880px, 92vw); border: 2px solid #DADDE1; border-radius: 18px;
-  padding: 14px 18px; background: #fff; box-sizing: border-box; }
+.bubble {
+  width: 100% !important;         /* ← 폼과 동일 폭 */
+  max-width: none !important;      /* ← 상한 해제 */
+  border: 2px solid #DADDE1;
+  border-radius: 18px;
+  padding: 14px 18px;
+  background: #fff;
+  box-sizing: border-box;
+}
 .bubble-eebi{ border-color:#cfd6dd; }
 .bubble-narr{ border-style:dashed; color:#6b7280; }
 .bubble .label{ font-weight:700; color:#374151; margin-right:8px; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+/* 버튼 전폭/중앙 강제 해제: 가로 정렬(컬럼 배치) 위해 폭 자동 */
+div.stButton > button{
+  font-size: 30px;
+  font-weight: 700;
+  border: 3px solid #DADDE1;
+  box-sizing: border-box;
+  width: auto !important;          /* ← 전폭 해제 */
+  height: 48px;
+  padding: 0 22px;
+  border-radius: 14px;
+  display: inline-block;            /* ← 가로로 자연스럽게 */
+  margin: 12px 0 !important;        /* 좌우 마진은 컬럼이 담당 */
+}
+
+/* (선택) 너무 과한 전역 중앙 정렬은 유지해도 되지만,
+   버튼 배치는 컬럼으로 제어하므로 이 정도만 두면 충분합니다. */
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+/* === (추가) 전역 중앙 정렬 === */
+.block-container { text-align: center; }  /* markdown 기본 텍스트 */
+div[data-testid="stMarkdown"] { text-align: center; } /* st.write/markdown 출력 */
+div.stTextArea textarea { text-align: center !important; } /* 입력창 내부 텍스트 */
+.bubble { text-align: center; } /* 말풍선 내부 */
+.bubble .label { display: block; margin-bottom: 6px; } /* 라벨을 한 줄 위로 */
+.prologue-line { text-align: center; } /* 프롤로그 문구 (이미 중앙이지만 안전차원 재명시) */
+
+/* metric(엔딩 페이지) 숫자와 라벨 중앙 정렬 */
+[data-testid="stMetric"] div { justify-content: center !important; }
+[data-testid="stMetricValue"], [data-testid="stMetricLabel"] { text-align: center !important; }
+
+/* 목록/문단/헤더도 중앙(마크다운 전역) */
+div[data-testid="stMarkdown"] h1, 
+div[data-testid="stMarkdown"] h2, 
+div[data-testid="stMarkdown"] h3,
+div[data-testid="stMarkdown"] p, 
+div[data-testid="stMarkdown"] li { 
+  text-align: center; 
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+/* === (추가) 전역 중앙 정렬 === */
+.block-container { text-align: center; }  /* markdown 기본 텍스트 */
+div[data-testid="stMarkdown"] { text-align: center; } /* st.write/markdown 출력 */
+div.stTextArea textarea { text-align: center !important; } /* 입력창 내부 텍스트 */
+.bubble { text-align: center; } /* 말풍선 내부 */
+.bubble .label { display: block; margin-bottom: 6px; } /* 라벨을 한 줄 위로 */
+.prologue-line { text-align: center; } /* 프롤로그 문구 (이미 중앙이지만 안전차원 재명시) */
+
+/* metric(엔딩 페이지) 숫자와 라벨 중앙 정렬 */
+[data-testid="stMetric"] div { justify-content: center !important; }
+[data-testid="stMetricValue"], [data-testid="stMetricLabel"] { text-align: center !important; }
+
+/* 목록/문단/헤더도 중앙(마크다운 전역) */
+div[data-testid="stMarkdown"] h1, 
+div[data-testid="stMarkdown"] h2, 
+div[data-testid="stMarkdown"] h3,
+div[data-testid="stMarkdown"] p, 
+div[data-testid="stMarkdown"] li { 
+  text-align: center; 
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+/* 요약자 말풍선의 라벨(📜 요약자)만 숨김 */
+.bubble-narr .label{ display:none !important; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+/* 1) 이미지 컨테이너를 50%로 줄이고 중앙 정렬 */
+.scene-wrap [data-testid="stImage"]{
+  width: 50% !important;
+  max-width: min(320px, 45vw) !important;  /* 절반 상한 */
+  margin: 0 auto !important;               /* 중앙 정렬 */
+}
+
+/* 2) 컨테이너 안의 img는 컨테이너 너비에 맞춤 */
+.scene-wrap [data-testid="stImage"] img{
+  width: 100% !important;
+  height: auto !important;
+  display: block !important;
+  border-radius: 12px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -331,7 +435,7 @@ def ensure_main_state():
     ss = st.session_state
     if "page" not in ss: ss.page = "title"
     if "turn" not in ss: ss.turn = 1
-    if "eebi_text" not in ss: ss.eebi_text = "…어떻게 해야할지 잘 모르겠어."
+    if "eebi_text" not in ss: ss.eebi_text = "…안녕? 난 이비야."
     if "narr_text" not in ss: ss.narr_text = ""
     if "silent_turns" not in ss: ss.silent_turns = 0
     # 파라미터(감정) 누적치: 0에서 시작
@@ -343,8 +447,11 @@ def ensure_main_state():
 
 def title_page():
     st.markdown("<h1 class='app-title'>7 about ...</h1>", unsafe_allow_html=True)
-    start   = st.button("시작",   key="btn_start")
-    endings = st.button("엔딩", key="btn_endings")
+    c_sp, c1, c2 = st.columns([6, 1, 1])
+    with c1:
+        start = st.button("시작", key="btn_start", use_container_width=True)
+    with c2:
+        endings = st.button("엔딩", key="btn_endings", use_container_width=True)
     st.markdown("---")
     # _embed_model이 없어도 EMBED_MODEL_NAME은 항상 정의
     st.caption(f"Embedding: {EMBED_MODEL_NAME if _embed_model else 'keyword-backup'} • Whitelist replies • Counter endings")
@@ -356,8 +463,8 @@ def prologue_page():
         "당신은 숲 속에 홀로 있는 곰을 발견했습니다.",
         "곰에게 말을 걸어 이야기를 해보세요",
         "대화는 총 7번 나눌 수 있습니다.",
-        "대화마다 가장 강한 감정이 +1 증가합니다.",
-        "7턴 후 가장 높은 감정 엔딩으로 갑니다.",
+        "이야기에 따라 곰의 감정이 변화합니다.",
+        "7턴 후 최종 감정 상태에 따라 엔딩이 변화합니다.",
     ]
     st.write("")
     st.markdown("<div class='prologue-wrap'>", unsafe_allow_html=True)
@@ -367,9 +474,18 @@ def prologue_page():
         st.markdown(f"<p class='prologue-line' style='animation-delay:{delay:.2f}s'>{t}</p>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
     final_delay = base_delay + len(lines)*step + 0.2
-    st.markdown(f"<div class='prologue-cta' style='animation-delay:{final_delay:.2f}s'>", unsafe_allow_html=True)
-    ok = st.button("알겠어요!", key="btn_ok_prologue")
+    st.markdown(
+        f"<div class='prologue-cta' style='animation-delay:{final_delay:.2f}s'>",
+        unsafe_allow_html=True,
+    )
+
+    # ▶ 오른쪽 정렬: spacer + 버튼 컬럼
+    c_sp, c_btn = st.columns([6, 1])
+    with c_btn:
+        ok = st.button("알겠어요!", key="btn_ok_prologue", use_container_width=True)
+
     st.markdown("</div>", unsafe_allow_html=True)
+
     if ok:
         st.session_state.page = "main"; st.rerun()
 
@@ -429,27 +545,44 @@ def main_page():
     ss = st.session_state
     st.markdown("<div class='scene-wrap'>", unsafe_allow_html=True)
 
-    st.markdown(f"<div class='bubble bubble-eebi'><span class='label'>🐻 이비</span>{ss.eebi_text}</div>", unsafe_allow_html=True)
-    narr_show = ss.narr_text if ss.narr_text else " "
-    st.markdown(f"<div class='bubble bubble-narr'><span class='label'>📜 요약자</span>{narr_show}</div>", unsafe_allow_html=True)
-
+    # (A) 씬 이미지 — 최상단
     if MAIN_IMG.exists():
-        st.image(str(MAIN_IMG), width=720)
+        st.image(str(MAIN_IMG))  # use_container_width / width 파라미터 생략
     else:
         st.info("씬 이미지를 찾지 못했어요. assets/main_scene.png 파일을 넣어주세요.")
-        st.markdown("<div style='width:min(720px,92vw);height:420px;border:2px dashed #DADDE1;border-radius:18px;display:flex;align-items:center;justify-content:center;color:#94a3b8;'>[ scene placeholder ]</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='width:min(720px,92vw);height:420px;border:2px dashed #DADDE1;"
+            "border-radius:18px;display:flex;align-items:center;justify-content:center;color:#94a3b8;'>"
+            "[ scene placeholder ]</div>",
+            unsafe_allow_html=True
+        )
 
-    st.markdown("""
-    <style>
-    div[data-testid="stTextArea"] small{ visibility: hidden !important; font-size: 0 !important; }
-    div[data-testid="stTextArea"] small span[aria-live="polite"]{ visibility: visible !important; font-size: 12px !important; }
-    </style>
-    """, unsafe_allow_html=True)
+    # (B) 해설자 말풍선 — 내용이 있을 때만, 이비 바로 위에 표시
+    if ss.narr_text:
+        st.markdown(
+            f"<div class='bubble bubble-narr'><span class='label'>📜 요약자</span>{ss.narr_text}</div>",
+            unsafe_allow_html=True
+        )
+
+    # (C) 이비 말풍선 — 사용자 입력 바로 위
+    st.markdown(
+        f"<div class='bubble bubble-eebi'><span class='label'>🐻 이비</span>{ss.eebi_text}</div>",
+        unsafe_allow_html=True
+    )
 
     with st.form("user_say", clear_on_submit=True):
-        user_text = st.text_area(label="", key=f"user_text_{ss.turn}", max_chars=30, height=48,
-                                 placeholder="당신의 말을 30자 이내로 적어주세요", label_visibility="collapsed")
-        submitted = st.form_submit_button("말하기")
+        user_text = st.text_area(
+            label="",
+            key=f"user_text_{ss.turn}",
+            max_chars=30, height=48,
+            placeholder="당신의 말을 30자 이내로 적어주세요",
+            label_visibility="collapsed"
+        )
+        # ⬇️ 컬럼/래퍼 없이 기본 형태로
+        # 입력창은 그대로 두고, 제출 버튼만 우측 정렬
+        col_sp, col_btn = st.columns([6, 1])
+        with col_btn:
+            submitted = st.form_submit_button("말하기", use_container_width=True)
 
     if submitted:
         txt = (user_text or "").strip()
@@ -533,7 +666,11 @@ def result_page():
         st.write(f"{i}. 당신: {u}")
         st.write(f"   이비: {e}")
 
-    if st.button("처음으로"):
+    c_sp, c_btn = st.columns([6, 1])
+    with c_btn:
+        back = st.button("처음으로", use_container_width=True)
+    
+    if back:
         keep = []
         for k in list(st.session_state.keys()):
             if k not in keep:
