@@ -1,4 +1,4 @@
-# app.py — 7 about ... (Embedding classifier + Whitelist replies + Simple counter endings + Robust fixes)
+# app.py — 7 about ... (Embedding classifier + Whitelist replies + Simple counter endings + Robust fixes + Summary page)
 import os, json, re
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -28,8 +28,23 @@ if USE_EEVE_SELECTOR or USE_EEVE_SIMILAR:
     _http = requests.Session()
     _http.trust_env = False
 
+def _ensure_http():
+    """요약 단계에서 EEVE 옵션이 꺼져 있어도 LLM을 쓰기 위해 세션 확보."""
+    global _http
+    if _http is None:
+        try:
+            import requests
+            _http = requests.Session()
+            _http.trust_env = False
+        except Exception:
+            _http = None
+    return _http
+
 def _eeve_chat(payload: dict, timeout: int = 15) -> str:
-    r = _http.post(OLLAMA_URL, json=payload, timeout=timeout)
+    sess = _ensure_http()
+    if sess is None:
+        raise RuntimeError("LLM 세션 생성 실패")
+    r = sess.post(OLLAMA_URL, json=payload, timeout=timeout)
     r.raise_for_status()
     data = r.json()
     return (data.get("message", {}) or {}).get("content", "").strip()
@@ -296,6 +311,138 @@ def update_emotion_count(ss, key: str):
     ss.emotions_total[key] = float(ss.emotions_total.get(key, 0.0)) + 1.0
     ss.emo_hist.append(key)
 
+# ===== Summary helpers (NEW) =====
+def _pick_final_ending(ss) -> str:
+    """7턴 종료 후 최종 엔딩 감정 결정 (동점 시 '가장 최근에 선택된 감정' 우선)."""
+    totals = ss.emotions_total
+    max_v = max(totals.values()) if totals else 0.0
+    cands = [k for k, v in totals.items() if v == max_v]
+    # 최근 등장 감정 우선
+    for ek in reversed(ss.emo_hist):
+        if ek in cands:
+            return ek
+    # 그래도 없으면 고정 우선순위
+    for ek in EMO_KEYS:
+        if ek in cands:
+            return ek
+    return "solitude"
+
+def _dominant_emotion(ss) -> str:
+    """요약 프롬프트/폴백에서도 쓰는 우세 감정(동점시 최근 등장 우선)."""
+    return _pick_final_ending(ss)
+
+def _build_summary_prompt(ss) -> Tuple[str, str]:
+    """개선안 반영 System/User 프롬프트 구성 (각 문장 최대 30자, 총 3문장)."""
+    # System
+    system = (
+        "너는 지금 '숲속의 곰 이비' 역할이야.\n"
+        "아래 7개의 사용자 입력과 감정 카운터를 보고\n"
+        "사용자가 어떤 감정의 이야기를 가장 많이 했는지, 그리고 어떤 분위기의 대화를 나눴는지\n"
+        "3개의 짧은 문장으로 설명해 줘.\n\n"
+        "필수 규칙:\n"
+        "- 각 문장은 최대 30자 이내로 출력 (총 3문장)\n"
+        "- 한국어, 문장 형태(번호/불릿/따옴표/이모지 금지)\n"
+        "- 건강·정치·심리·종교·개인 신념 등 민감 추론 금지\n"
+        "- 감정 카운터 수치를 직접 언급하지 말고, '주로 ~한 톤'처럼 서술\n"
+        "- 1번째 문장: \"너는 ~ 감정이 느껴질 이야기를 많이 했구나\" 형태\n"
+        "- 2번째 문장: 그런 이야기를 자주 들은 이비가 어떻게 느끼는지\n"
+        "- 3번째 문장: 이비 입장에서 들었던 감정에 대한 생각/말(반말)\n"
+        "- 동점이면 최근에 등장한 감정을 기반으로 서술\n"
+        "- 출력은 아래 형식으로:\n\n"
+        "1) 첫 문장\n2) 두 번째 문장\n3) 세 번째 문장"
+    )
+    # User
+    ulist = ss.user_hist[:7] + [""] * (7 - len(ss.user_hist))
+    counters = ss.emotions_total
+    user = (
+        "[대화 입력 7개]\n"
+        f"1) {ulist[0]}\n"
+        f"2) {ulist[1]}\n"
+        f"3) {ulist[2]}\n"
+        f"4) {ulist[3]}\n"
+        f"5) {ulist[4]}\n"
+        f"6) {ulist[5]}\n"
+        f"7) {ulist[6]}\n\n"
+        "[감정 카운터 합계(0~7)]\n"
+        f'{json.dumps({k:int(counters.get(k,0)) for k in EMO_KEYS}, ensure_ascii=False)}\n\n'
+        "요청:\n- 위 내용을 반영해 3문장으로만, 형식에 맞춰 출력하세요."
+    )
+    return system, user
+
+def _llm_summary(ss, timeout=15) -> List[str]:
+    """LLM을 호출해 3문장을 받되, 실패/형식불일치 시 빈 리스트 반환."""
+    system, user = _build_summary_prompt(ss)
+    payload = {
+        "model": EEVE_MODEL,
+        "messages": [
+            {"role":"system","content": system},
+            {"role":"user",  "content": user},
+        ],
+        "options": {"temperature": 0.2, "num_predict": 180, "stop": []},
+        "stream": False,
+    }
+    text = _eeve_chat(payload, timeout=timeout)
+    # 기대 형식: "1) ...\n2) ...\n3) ..."
+    lines = []
+    for m in re.finditer(r'(?:^|\n)\s*\d\)\s*(.+)', text):
+        s = normalize_text(m.group(1))
+        if len(s) > 30:
+            s = split_utterance_ko(s, 30)[0]
+        lines.append(s)
+    # 길이/검증
+    out = []
+    for s in lines[:3]:
+        # 이비 말풍선 규칙(반말/30자/영문X/이모지X/욕설X/존댓말X)
+        # 요약 문장은 '이비' 화자이므로 validate_eebi_text로 동일 검증
+        if validate_eebi_text(s, 30):
+            out.append(s)
+        else:
+            # 과한 제약으로 막히면 최대한 정돈
+            s = normalize_text(s)
+            s = s[:30]
+            if not s: s = "…"
+            out.append(s)
+    return out if len(out) == 3 else []
+
+def _fallback_summary(ss) -> List[str]:
+    """LLM 실패 시 규칙 기반 3문장 생성(각 30자 이내, 반말)."""
+    dom = _dominant_emotion(ss)
+    emo_word = {
+        "hope":"희망",
+        "trust":"신뢰",
+        "sadness":"슬픔",
+        "solitude":"외로움",
+        "anger":"분노",
+    }.get(dom, "감정")
+    l1 = f"너는 {emo_word}이 느껴질 이야기를 많이 했구나"
+    # 30자 컷
+    l1 = split_utterance_ko(l1, 30)[0]
+    feel = {
+        "hope":"내 마음이 조금 따뜻해졌어.",
+        "trust":"조금 더 기대고 싶어졌어.",
+        "sadness":"내 숨이 살짝 무거워졌어.",
+        "solitude":"숲이 더 조용해진 것 같아.",
+        "anger":"가슴이 조금 답답해졌어.",
+    }.get(dom, "내 마음이 조금 흔들렸어.")
+    l2 = split_utterance_ko(feel, 30)[0]
+    think = {
+        "hope":"다음엔 너의 빛을 더 들려줘.",
+        "trust":"오늘은 네 옆에 더 서 있을게.",
+        "sadness":"조금 쉬어가도 괜찮아.",
+        "solitude":"나는 여기서 기다릴게.",
+        "anger":"조금만 천천히 말해줘.",
+    }.get(dom, "나는 네 곁에서 들을게.")
+    l3 = split_utterance_ko(think, 30)[0]
+    # validate
+    out = []
+    for s in [l1,l2,l3]:
+        s = normalize_text(s)
+        if len(s) > 30: s = split_utterance_ko(s, 30)[0]
+        if not validate_eebi_text(s, 30):
+            s = "…"
+        out.append(s)
+    return out
+
 # ===== Assets & UI =====
 ASSETS_DIR = Path(__file__).parent / "assets"
 MAIN_IMG = ASSETS_DIR / "main_scene.png"
@@ -381,31 +528,6 @@ div[data-testid="stMarkdown"] li {
 
 st.markdown("""
 <style>
-/* === (추가) 전역 중앙 정렬 === */
-.block-container { text-align: center; }  /* markdown 기본 텍스트 */
-div[data-testid="stMarkdown"] { text-align: center; } /* st.write/markdown 출력 */
-div.stTextArea textarea { text-align: center !important; } /* 입력창 내부 텍스트 */
-.bubble { text-align: center; } /* 말풍선 내부 */
-.bubble .label { display: block; margin-bottom: 6px; } /* 라벨을 한 줄 위로 */
-.prologue-line { text-align: center; } /* 프롤로그 문구 (이미 중앙이지만 안전차원 재명시) */
-
-/* metric(엔딩 페이지) 숫자와 라벨 중앙 정렬 */
-[data-testid="stMetric"] div { justify-content: center !important; }
-[data-testid="stMetricValue"], [data-testid="stMetricLabel"] { text-align: center !important; }
-
-/* 목록/문단/헤더도 중앙(마크다운 전역) */
-div[data-testid="stMarkdown"] h1, 
-div[data-testid="stMarkdown"] h2, 
-div[data-testid="stMarkdown"] h3,
-div[data-testid="stMarkdown"] p, 
-div[data-testid="stMarkdown"] li { 
-  text-align: center; 
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<style>
 /* 요약자 말풍선의 라벨(📜 요약자)만 숨김 */
 .bubble-narr .label{ display:none !important; }
 </style>
@@ -444,19 +566,29 @@ def ensure_main_state():
     if "eebi_hist" not in ss: ss.eebi_hist = []
     if "emo_hist" not in ss: ss.emo_hist = []           # 각 턴에서 선택된 감정 기록
     if "wl_idx" not in ss: ss.wl_idx = {k: 0 for k in EMO_KEYS}
+    # Summary 상태
+    if "summary_lines" not in ss: ss.summary_lines = None  # List[str] | None
+    if "summary_step" not in ss: ss.summary_step = 0        # 0..3
 
 def title_page():
     st.markdown("<h1 class='app-title'>7 about ...</h1>", unsafe_allow_html=True)
+
+    # 레이아웃은 그대로 유지: [spacer, (기존 start 자리), (기존 ending 자리)]
     c_sp, c1, c2 = st.columns([6, 1, 1])
-    with c1:
-        start = st.button("시작", key="btn_start", use_container_width=True)
+
+    # 기존 start 버튼은 제거하고, 기존 ending 위치(c2)에 '시작' 버튼만 배치
     with c2:
-        endings = st.button("엔딩", key="btn_endings", use_container_width=True)
+        start = st.button("시작", key="btn_start", use_container_width=True)
+
     st.markdown("---")
-    # _embed_model이 없어도 EMBED_MODEL_NAME은 항상 정의
-    st.caption(f"Embedding: {EMBED_MODEL_NAME if _embed_model else 'keyword-backup'} • Whitelist replies • Counter endings")
+    st.caption(
+        f"Embedding: {EMBED_MODEL_NAME if _embed_model else 'keyword-backup'} • "
+        "Whitelist replies • Counter endings"
+    )
+
     if start:
-        st.session_state.page = "prologue"; st.rerun()
+        st.session_state.page = "prologue"
+        st.rerun()
 
 def prologue_page():
     lines = [
@@ -495,7 +627,7 @@ def pick_whitelist_line(ss, emo_key: str) -> str:
     if n == 0: return "…"
 
     # 1) 하이브리드-스냅
-    if USE_EEVE_SIMILAR and _http is not None and _embed_model is not None:
+    if USE_EEVE_SIMILAR and _ensure_http() is not None and _embed_model is not None:
         try:
             cand_list = _eeve_suggest_similar(emo_key, items)
             if cand_list:
@@ -521,7 +653,7 @@ def pick_whitelist_line(ss, emo_key: str) -> str:
             pass
 
     # 2) LLM-Selector (인덱스만)
-    if USE_EEVE_SELECTOR and _http is not None:
+    if USE_EEVE_SELECTOR and _ensure_http() is not None:
         try:
             k = _eeve_choose_index(n, emo_key)
             line = normalize_text(items[k])
@@ -578,8 +710,7 @@ def main_page():
             placeholder="당신의 말을 30자 이내로 적어주세요",
             label_visibility="collapsed"
         )
-        # ⬇️ 컬럼/래퍼 없이 기본 형태로
-        # 입력창은 그대로 두고, 제출 버튼만 우측 정렬
+        # 입력창 그대로, 제출 버튼만 우측 정렬
         col_sp, col_btn = st.columns([6, 1])
         with col_btn:
             submitted = st.form_submit_button("말하기", use_container_width=True)
@@ -623,7 +754,8 @@ def main_page():
 
         ss.turn += 1
         if ss.turn > 7:
-            ss.page = "result"
+            # ★ 변경: result가 아니라 summary로 이동
+            ss.page = "summary"
         st.rerun()
 
     st.markdown(f"<div style='color:#6b7280'>현재 턴: <b>{ss.turn}</b> / 7</div>", unsafe_allow_html=True)
@@ -631,20 +763,56 @@ def main_page():
         st.caption(f"디버그 - 유사도: {ss.last_sims}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-def _pick_final_ending(ss) -> str:
-    """7턴 종료 후 최종 엔딩 감정 결정 (동점 시 '가장 최근에 선택된 감정' 우선)."""
-    totals = ss.emotions_total
-    max_v = max(totals.values()) if totals else 0.0
-    cands = [k for k, v in totals.items() if v == max_v]
-    # 최근 등장 감정 우선
-    for ek in reversed(ss.emo_hist):
-        if ek in cands:
-            return ek
-    # 그래도 없으면 고정 우선순위
-    for ek in EMO_KEYS:
-        if ek in cands:
-            return ek
-    return "solitude"
+# ===== Summary Page (NEW) =====
+def summary_page():
+    ensure_main_state()
+    ss = st.session_state
+    st.markdown("<div class='scene-wrap'>", unsafe_allow_html=True)
+
+    # 씬 이미지 (선택적으로 동일 렌더)
+    if MAIN_IMG.exists():
+        st.image(str(MAIN_IMG))
+    else:
+        st.markdown(
+            "<div style='width:min(720px,92vw);height:240px;border:2px dashed #DADDE1;"
+            "border-radius:18px;display:flex;align-items:center;justify-content:center;color:#94a3b8;'>"
+            "[ scene placeholder ]</div>",
+            unsafe_allow_html=True
+        )
+
+    # 최초 진입 시 요약문 생성(LLM → 폴백)
+    if ss.summary_lines is None:
+        lines = []
+        try:
+            lines = _llm_summary(ss, timeout=20)
+        except Exception:
+            lines = []
+        if len(lines) != 3:
+            lines = _fallback_summary(ss)
+        ss.summary_lines = lines
+        ss.summary_step = 0
+
+    # 현재 단계에 따라 문장 표시
+    shown = ss.summary_step
+    for i in range(shown):
+        st.markdown(
+            f"<div class='bubble bubble-eebi'><span class='label'>🐻 이비</span>{ss.summary_lines[i]}</div>",
+            unsafe_allow_html=True
+        )
+
+    # 컨트롤 버튼: 답변 / 엔딩 보기
+    c_sp, c_btn = st.columns([6, 1])
+    with c_btn:
+        if ss.summary_step < 3:
+            if st.button("답변", key=f"btn_summary_next_{ss.summary_step}", use_container_width=True):
+                ss.summary_step += 1
+                st.rerun()
+        else:
+            if st.button("엔딩 보기", key="btn_go_result", use_container_width=True):
+                ss.page = "result"
+                st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def result_page():
     ss = st.session_state
@@ -695,6 +863,8 @@ if st.session_state.page == "title":
     title_page()
 elif st.session_state.page == "prologue":
     prologue_page()
+elif st.session_state.page == "summary":   # ★ 새 경로
+    summary_page()
 elif st.session_state.page == "result":
     result_page()
 else:
