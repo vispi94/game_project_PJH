@@ -1,0 +1,30 @@
+# === EEVE Korean Instruct 10.8B (Q4_K_M) ===
+FROM ./EEVE-Korean-Instruct-10.8B-v1.0-Q4_K_M.gguf
+
+# 컨텍스트 길이(필요 시 8192까지 시도 가능, VRAM 여유 고려)
+PARAMETER num_ctx 4096
+
+# 한 번에 생성할 토큰 상한 (필요 시 조정)
+PARAMETER num_predict 512
+
+# 온도/탑P 등 기본 샘플링 설정
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+
+# 한국어 대화에 잘 맞는 스톱 토큰(필요 시 조정)
+PARAMETER stop "### Instruction:"
+PARAMETER stop "### Response:"
+
+# (선택) 시스템 지침 — 장황한 설명 줄이고 간결/정중 위주
+SYSTEM """
+당신은 한국어 대화에 특화된 조용하고 공감적인 조수입니다.
+불필요한 수식어나 장황한 설명을 줄이고, 질문에 바로 답하세요.
+"""
+
+# (선택) 프롬프트 템플릿 — 기본 템플릿이면 생략 가능
+#TEMPLATE """
+#### Instruction:
+#{{ .Prompt }}
+#
+#### Response:
+#"""

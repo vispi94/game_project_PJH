@@ -1,0 +1,7 @@
+{
+  "model": "llama3:latest",
+  "prompt": "[SYSTEM]\n당신은 감정 분석가입니다. 반드시 JSON 한 덩어리만 출력합니다. 어떤 설명도 금지합니다.\n규칙:\n- scores:{warmth,trust,sadness,curiosity,energy}=0~1 실수\n- deltas: 각 항목 ±0.2\n- flags:{harm,abuse}=boolean\n[/SYSTEM]\n<CONTEXT_JSON>{\"turn\":1,\"user_text\":\"반가워\",\"scores\":{\"warmth\":0.5,\"trust\":0.5,\"sadness\":0.5,\"curiosity\":0.5,\"energy\":0.5}}</CONTEXT_JSON>\nJSON만 출력하세요.",
+  "temperature": 0.2,
+  "top_p": 0.9,
+  "stream": false
+}

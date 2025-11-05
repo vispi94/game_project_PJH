@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.ipynb_checkpoints/
+
+# Secrets / env
+.env
+*.env
+
+# Models / weights / big artifacts
+*.gguf
+*.bin
+*.pt
+*.safetensors
+*.ckpt
+*.onnx
+*.tflite
+models/
+EEVE-Korean-Instruct-*
+
+# Logs / data / cache
+*.log
+*.sqlite
+*.db
+*.csv
+*.tsv
+*.parquet
+
+# OS / misc
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
