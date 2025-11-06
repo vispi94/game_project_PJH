@@ -8,13 +8,24 @@ import streamlit as st
 
 # ===== Optional Embedding (for emotion classification) =====
 # 항상 기본값을 먼저 잡아 NameError 방지
-# 권장 기본: paraphrase-multilingual-MiniLM-L12-v2
-EMBED_MODEL_NAME = os.environ.get("EMBED_MODEL_NAME", "paraphrase-multilingual-MiniLM-L12-v2")
+# 권장 기본: Day1Kim/Qwen3-Embedding-0.6B-Korean (HF)
+EMBED_MODEL_NAME = os.environ.get(
+    "EMBED_MODEL_NAME",
+    "Day1Kim/Qwen3-Embedding-0.6B-Korean"
+)
 try:
     from sentence_transformers import SentenceTransformer
-    _embed_model = SentenceTransformer(EMBED_MODEL_NAME)
-except Exception:
-    _embed_model = None  # 백업 키워드 분류기로 동작
+    # Qwen3 기반 ST: trust_remote_code 필요
+    _embed_model = SentenceTransformer(
+        EMBED_MODEL_NAME,
+        trust_remote_code=True
+    )
+    # 필요시 입력 길이 제한(안정성/속도)
+    _max_len = int(os.environ.get("EMBED_MAX_TOKENS", "512"))
+    if hasattr(_embed_model, "max_seq_length"):
+        _embed_model.max_seq_length = _max_len
+except Exception as _e:
+    _embed_model = None  # 임베딩 실패 시 키워드 폴백
 
 # ===== (선택) EEVE 옵션 =====
 USE_EEVE_SELECTOR = os.environ.get("USE_EEVE_SELECTOR", "0") == "1"   # 인덱스만 선택
@@ -239,6 +250,27 @@ def write_reply(text: str):
     return st.write(text)
 
 # ===== Similarity helpers =====
+# ===== Anchor mean cache (Qwen3 전용 아님, 공용) =====
+_ANCHOR_CACHE = None  # (keys, A) where A shape = (len(EMO_KEYS), dim), L2-normalized
+
+def _get_anchor_means():
+    """감정별 앵커(여러 문장)의 평균 벡터를 1회만 계산해서 캐시."""
+    global _ANCHOR_CACHE
+    if _ANCHOR_CACHE is not None:
+        return _ANCHOR_CACHE
+    if _embed_model is None:
+        return None
+    keys = list(EMO_ANCHOR_LISTS.keys())
+    mats = []
+    for k in keys:
+        vecs = np.asarray(_embed_model.encode(EMO_ANCHOR_LISTS[k]))
+        v = vecs.mean(axis=0)
+        v = v / (np.linalg.norm(v) + 1e-12)
+        mats.append(v)
+    A = np.asarray(mats)  # (len(keys), dim)
+    _ANCHOR_CACHE = (keys, A)
+    return _ANCHOR_CACHE
+
 def _norm(x: np.ndarray) -> np.ndarray:
     n = np.linalg.norm(x, axis=-1, keepdims=True) + 1e-12
     return x / n
@@ -289,14 +321,10 @@ def classify_top_emotion(text: str) -> Tuple[str, float]:
         return "hope", 0.99
 
     u = _embed_model.encode([text])[0]
-    A_keys = list(EMO_ANCHOR_LISTS.keys())
-    # 멀티 앵커 평균
-    A_vecs = []
-    for k in A_keys:
-        vecs = _embed_model.encode(EMO_ANCHOR_LISTS[k])
-        vecs = np.asarray(vecs)
-        A_vecs.append(vecs.mean(axis=0))
-    A_vecs = np.asarray(A_vecs)
+    got = _get_anchor_means()
+    if got is None:
+        return "solitude", 0.0
+    A_keys, A_vecs = got
 
     u = _norm(np.asarray(u))
     A = _norm(np.asarray(A_vecs))
@@ -581,10 +609,6 @@ def title_page():
         start = st.button("시작", key="btn_start", use_container_width=True)
 
     st.markdown("---")
-    st.caption(
-        f"Embedding: {EMBED_MODEL_NAME if _embed_model else 'keyword-backup'} • "
-        "Whitelist replies • Counter endings"
-    )
 
     if start:
         st.session_state.page = "prologue"
@@ -759,8 +783,8 @@ def main_page():
         st.rerun()
 
     st.markdown(f"<div style='color:#6b7280'>현재 턴: <b>{ss.turn}</b> / 7</div>", unsafe_allow_html=True)
-    if "last_sims" in ss:
-        st.caption(f"디버그 - 유사도: {ss.last_sims}")
+    # if "last_sims" in ss:
+    #     st.caption(f"디버그 - 유사도: {ss.last_sims}")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===== Summary Page (NEW) =====
@@ -804,7 +828,7 @@ def summary_page():
     c_sp, c_btn = st.columns([6, 1])
     with c_btn:
         if ss.summary_step < 3:
-            if st.button("답변", key=f"btn_summary_next_{ss.summary_step}", use_container_width=True):
+            if st.button("다음", key=f"btn_summary_next_{ss.summary_step}", use_container_width=True):
                 ss.summary_step += 1
                 st.rerun()
         else:
